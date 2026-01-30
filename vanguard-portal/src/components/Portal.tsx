@@ -124,24 +124,66 @@ export default function Portal() {
 
         const { tasks } = dashboardData;
         
-        // Calculate real stats from tasks
+        // Group tasks by phase
+        const tasksByPhase = tasks.reduce((acc, task) => {
+          if (!acc[task.phase]) acc[task.phase] = [];
+          acc[task.phase].push(task);
+          return acc;
+        }, {} as Record<string, Task[]>);
+        
+        // Calculate phase completion
+        const phases = ['PHASE 1', 'PHASE 2', 'PHASE 3', 'PHASE 4', 'PHASE 5', 'PHASE 6'];
+        const phaseProgress = phases.map(phase => {
+          const phaseTasks = tasksByPhase[phase] || [];
+          const completed = phaseTasks.filter(t => t.status === 'DONE').length;
+          const total = phaseTasks.length;
+          const percent = total > 0 ? (completed / total) * 100 : 0;
+          return { phase, completed, total, percent };
+        });
+        
+        // Find current phase (first incomplete phase)
+        const currentPhaseIndex = phaseProgress.findIndex(p => p.percent < 100);
+        const currentPhase = currentPhaseIndex >= 0 ? phaseProgress[currentPhaseIndex] : phaseProgress[phaseProgress.length - 1];
+        
+        // Calculate real stats
         const totalTasks = tasks.length;
         const completedTasks = tasks.filter(t => t.status === 'DONE').length;
         const inProgressTasks = tasks.filter(t => t.status === 'IN PROGRESS').length;
-        const blockedTasks = tasks.filter(t => t.status === 'BLOCKED').length;
-        const pendingTasks = tasks.filter(t => t.status === 'PENDING').length;
+        const blockedTasksCount = tasks.filter(t => t.status === 'BLOCKED').length;
         
         // Calculate completion percentage
         const completionPercent = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
         
-        // Get next 3 pending tasks that aren't blocked
-        const upcomingTasks = tasks
-          .filter(t => t.status === 'PENDING' && t.blockedBy === '--')
-          .slice(0, 3);
+        // Get ready to start tasks (Phase 2+ tasks that can start)
+        const getPhaseNumber = (phase: string): number => {
+          const match = phase.match(/PHASE (\d+)/);
+          return match ? parseInt(match[1]) : 0;
+        };
         
-        // Calculate days until SIA license (assuming 1 year from company formation)
+        const isPhaseComplete = (phase: string): boolean => {
+          const phaseTasks = tasksByPhase[phase] || [];
+          if (phaseTasks.length === 0) return true;
+          return phaseTasks.every(t => t.status === 'DONE');
+        };
+        
+        const readyToStartTasks = tasks.filter(t => {
+          if (t.status !== 'PENDING') return false;
+          const phaseNum = getPhaseNumber(t.phase);
+          if (phaseNum <= 1) return true; // Phase 1 tasks
+          const prevPhase = `PHASE ${phaseNum - 1}`;
+          return isPhaseComplete(prevPhase);
+        }).slice(0, 3);
+        
+        // Calculate days until SIA license
         const siaExpiryDate = new Date('2027-01-30');
         const daysUntilSIA = Math.ceil((siaExpiryDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+        
+        // Calculate estimated launch date based on critical path
+        const remainingTasks = totalTasks - completedTasks;
+        const avgTaskDuration = 5; // days per task
+        const daysToLaunch = remainingTasks * avgTaskDuration;
+        const launchDate = new Date();
+        launchDate.setDate(launchDate.getDate() + daysToLaunch);
         
         return (
           <div className="p-8">
@@ -154,59 +196,63 @@ export default function Portal() {
 
             {/* Critical Dashboard Widgets */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              {/* License Renewal Widget */}
+              {/* Time to Launch Widget */}
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 bg-amber-100 rounded-lg">
-                    <Calendar className="w-6 h-6 text-amber-600" />
+                  <div className="p-3 bg-blue-100 rounded-lg">
+                    <Calendar className="w-6 h-6 text-blue-600" />
                   </div>
-                  <span className={`text-sm font-medium ${daysUntilSIA < 30 ? 'text-red-600' : 'text-amber-600'}`}>
-                    {daysUntilSIA < 30 ? 'Expiring soon' : 'Active'}
+                  <span className="text-sm text-blue-600 font-medium">
+                    {daysToLaunch} days remaining
                   </span>
                 </div>
-                <div className="text-3xl font-bold text-slate-800 mb-1">{daysUntilSIA}</div>
-                <div className="text-sm text-slate-500">Days until SIA license expires</div>
+                <div className="text-3xl font-bold text-slate-800 mb-1">
+                  {launchDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </div>
+                <div className="text-sm text-slate-500">Estimated Launch</div>
                 <div className="mt-3 text-xs text-slate-400">
-                  Expires: {siaExpiryDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  Based on {remainingTasks} remaining tasks
                 </div>
               </div>
 
-              {/* Progress Widget */}
+              {/* Current Phase Widget */}
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <div className="flex items-center justify-between mb-4">
                   <div className="p-3 bg-emerald-100 rounded-lg">
                     <Wallet className="w-6 h-6 text-emerald-600" />
                   </div>
                   <span className="text-sm text-emerald-600 font-medium">
-                    {completedTasks} of {totalTasks} done
+                    {currentPhase?.completed || 0} of {currentPhase?.total || 0} done
                   </span>
                 </div>
-                <div className="text-3xl font-bold text-slate-800 mb-1">{completionPercent.toFixed(0)}%</div>
-                <div className="text-sm text-slate-500">Project completion</div>
+                <div className="text-3xl font-bold text-slate-800 mb-1">
+                  {currentPhase?.phase || 'Complete'}
+                </div>
+                <div className="text-sm text-slate-500">Current Phase</div>
                 <div className="mt-3">
                   <div className="w-full bg-slate-200 rounded-full h-2">
                     <div 
                       className="bg-emerald-500 h-2 rounded-full transition-all" 
-                      style={{ width: `${completionPercent}%` }}
+                      style={{ width: `${currentPhase?.percent || 100}%` }}
                     />
                   </div>
-                  <div className="mt-1 text-xs text-slate-400">{inProgressTasks} in progress • {blockedTasks} blocked • {pendingTasks} pending</div>
+                  <div className="mt-1 text-xs text-slate-400">{currentPhase?.percent.toFixed(0) || 100}% complete</div>
                 </div>
               </div>
 
-              {/* Upcoming Tasks Widget */}
+              {/* Ready to Start Widget */}
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <div className="flex items-center justify-between mb-4">
                   <div className="p-3 bg-blue-100 rounded-lg">
                     <Clock className="w-6 h-6 text-blue-600" />
                   </div>
                   <span className="text-sm text-blue-600 font-medium">
-                    {upcomingTasks.length} ready to start
+                    {readyToStartTasks.length} tasks ready
                   </span>
                 </div>
                 <div className="space-y-3">
-                  {upcomingTasks.length > 0 ? (
-                    upcomingTasks.map((task) => (
+                  {readyToStartTasks.length > 0 ? (
+                    readyToStartTasks.map((task) => (
                       <div key={task.id} className="flex items-start gap-2">
                         <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
@@ -216,9 +262,49 @@ export default function Portal() {
                       </div>
                     ))
                   ) : (
-                    <p className="text-sm text-slate-500 italic">No pending tasks available</p>
+                    <div className="text-center py-4">
+                      <p className="text-sm text-slate-500 mb-2">🎉 Phase 1 Complete!</p>
+                      <p className="text-xs text-slate-400">Start Phase 2 tasks</p>
+                    </div>
                   )}
                 </div>
+              </div>
+            </div>
+
+            {/* Phase Progress */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
+              <h3 className="text-lg font-semibold text-slate-800 mb-4">Phase Progress</h3>
+              <div className="space-y-4">
+                {phaseProgress.map((phase, index) => {
+                  const isCurrent = index === currentPhaseIndex;
+                  const isComplete = phase.percent === 100;
+                  return (
+                    <div key={phase.phase} className="flex items-center gap-4">
+                      <div className="w-24 text-sm font-medium text-slate-600">
+                        {phase.phase}
+                      </div>
+                      <div className="flex-1">
+                        <div className="w-full bg-slate-200 rounded-full h-3">
+                          <div 
+                            className={`h-3 rounded-full transition-all ${
+                              isComplete ? 'bg-emerald-500' : isCurrent ? 'bg-blue-500' : 'bg-slate-300'
+                            }`}
+                            style={{ width: `${phase.percent}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="w-24 text-right text-sm text-slate-600">
+                        {isComplete ? (
+                          <span className="text-emerald-600">✓ Complete</span>
+                        ) : isCurrent ? (
+                          <span className="text-blue-600">← You are here</span>
+                        ) : (
+                          `${phase.completed}/${phase.total}`
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -270,14 +356,14 @@ export default function Portal() {
                       <div className="w-3 h-3 rounded-full bg-amber-500" />
                       <span className="text-sm text-slate-700">Pending</span>
                     </div>
-                    <span className="text-sm font-semibold text-slate-800">{pendingTasks}</span>
+                    <span className="text-sm font-semibold text-slate-800">{tasks.filter(t => t.status === 'PENDING').length}</span>
                   </div>
                   <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                     <div className="flex items-center gap-3">
                       <div className="w-3 h-3 rounded-full bg-red-500" />
                       <span className="text-sm text-slate-700">Blocked</span>
                     </div>
-                    <span className="text-sm font-semibold text-slate-800">{blockedTasks}</span>
+                    <span className="text-sm font-semibold text-slate-800">{blockedTasksCount}</span>
                   </div>
                 </div>
               </div>

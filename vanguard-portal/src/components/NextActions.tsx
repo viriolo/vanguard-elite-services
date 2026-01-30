@@ -108,6 +108,35 @@ export default function NextActions() {
     // Get completed tasks for dependency checking
     const completedTaskIds = new Set(tasks.filter(t => t.status === 'DONE').map(t => t.id));
     
+    // Group tasks by phase
+    const tasksByPhase = tasks.reduce((acc, task) => {
+      if (!acc[task.phase]) acc[task.phase] = [];
+      acc[task.phase].push(task);
+      return acc;
+    }, {} as Record<string, Task[]>);
+    
+    // Check if a phase is complete
+    const isPhaseComplete = (phase: string): boolean => {
+      const phaseTasks = tasksByPhase[phase] || [];
+      if (phaseTasks.length === 0) return true;
+      return phaseTasks.every(t => t.status === 'DONE');
+    };
+    
+    // Get phase number from phase string (e.g., "PHASE 2" -> 2)
+    const getPhaseNumber = (phase: string): number => {
+      const match = phase.match(/PHASE (\d+)/);
+      return match ? parseInt(match[1]) : 0;
+    };
+    
+    // Check if previous phase is complete
+    const isPreviousPhaseComplete = (task: Task): boolean => {
+      const currentPhaseNum = getPhaseNumber(task.phase);
+      if (currentPhaseNum <= 1) return true; // Phase 1 has no previous phase
+      
+      const previousPhase = `PHASE ${currentPhaseNum - 1}`;
+      return isPhaseComplete(previousPhase);
+    };
+    
     pendingTasks.forEach(task => {
       let action: ActionItem = {
         task,
@@ -116,8 +145,17 @@ export default function NextActions() {
         canStart: false,
       };
 
-      // Check if task is blocked
-      if (task.blockedBy !== '--') {
+      // First check if previous phase is complete
+      const previousPhaseComplete = isPreviousPhaseComplete(task);
+      
+      if (!previousPhaseComplete) {
+        const currentPhaseNum = getPhaseNumber(task.phase);
+        const previousPhase = `PHASE ${currentPhaseNum - 1}`;
+        action.reason = `Waiting for ${previousPhase} to complete`;
+        action.urgency = 'low';
+        action.canStart = false;
+      } else if (task.blockedBy !== '--') {
+        // Check specific task dependencies
         const blockers = task.blockedBy.split(',').map(b => b.trim());
         const uncompletedBlockers = blockers.filter(b => !completedTaskIds.has(b) && b !== '');
         
@@ -132,9 +170,9 @@ export default function NextActions() {
           action.urgency = task.priority === 'high' ? 'critical' : task.priority === 'medium' ? 'high' : 'medium';
         }
       } else {
-        // No dependencies - can start immediately
+        // No dependencies and previous phase complete - can start immediately
         action.canStart = true;
-        action.reason = 'No dependencies';
+        action.reason = 'Ready to start';
         action.urgency = task.priority === 'high' ? 'critical' : task.priority === 'medium' ? 'high' : 'medium';
       }
 
