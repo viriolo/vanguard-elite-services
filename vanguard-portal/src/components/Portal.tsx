@@ -15,15 +15,23 @@ import {
   Wallet,
   AlertTriangle,
   Clock,
-  Loader2
+  Loader2,
+  Columns,
+  Zap,
+  Flag,
+  Route
 } from 'lucide-react';
 import { USERS } from '@/lib/config';
 import { FileNode, getFileContent } from '@/lib/github-client';
 import FileBrowser from './FileBrowser';
 import DocumentViewer from './DocumentViewer';
 import TaskTracker from './TaskTracker';
+import KanbanBoard from './KanbanBoard';
+import NextActions from './NextActions';
+import Milestones from './Milestones';
+import CriticalPath from './CriticalPath';
 
-type View = 'dashboard' | 'documents' | 'tasks' | 'history';
+type View = 'dashboard' | 'documents' | 'tasks' | 'history' | 'kanban' | 'next-actions' | 'milestones' | 'critical-path';
 
 interface Task {
   id: string;
@@ -96,6 +104,10 @@ export default function Portal() {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'documents', label: 'Documents', icon: FolderOpen },
     { id: 'tasks', label: 'Tasks', icon: CheckSquare },
+    { id: 'kanban', label: 'Kanban Board', icon: Columns },
+    { id: 'next-actions', label: 'Next Actions', icon: Zap },
+    { id: 'milestones', label: 'Milestones', icon: Flag },
+    { id: 'critical-path', label: 'Critical Path', icon: Route },
     { id: 'history', label: 'History', icon: History },
   ];
 
@@ -297,6 +309,18 @@ export default function Portal() {
 
       case 'tasks':
         return <TaskTracker />;
+
+      case 'kanban':
+        return <KanbanBoard />;
+
+      case 'next-actions':
+        return <NextActions />;
+
+      case 'milestones':
+        return <Milestones />;
+
+      case 'critical-path':
+        return <CriticalPath />;
 
       case 'history':
         return (
