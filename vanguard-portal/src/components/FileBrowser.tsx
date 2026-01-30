@@ -13,7 +13,6 @@ import {
   AlertCircle,
   X
 } from 'lucide-react';
-import { FOLDER_STRUCTURE } from '@/lib/config';
 import { FileNode, getRepositoryContents, uploadFile } from '@/lib/github-client';
 
 interface FileBrowserProps {
@@ -21,15 +20,17 @@ interface FileBrowserProps {
   selectedPath?: string;
 }
 
-interface TreeNode {
-  folder: typeof FOLDER_STRUCTURE[0];
+interface TreeItem {
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
   isOpen: boolean;
-  files: FileNode[];
+  children: TreeItem[];
   loading: boolean;
 }
 
 export default function FileBrowser({ onFileSelect, selectedPath }: FileBrowserProps) {
-  const [treeData, setTreeData] = useState<Record<string, TreeNode>>({});
+  const [treeData, setTreeData] = useState<TreeItem[]>([]);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error'>('synced');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<string>('');
@@ -39,7 +40,7 @@ export default function FileBrowser({ onFileSelect, selectedPath }: FileBrowserP
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   useEffect(() => {
-    initializeTree();
+    loadRootDirectories();
   }, []);
 
   // Real-time sync: Auto-refresh every 30 seconds
@@ -52,93 +53,138 @@ export default function FileBrowser({ onFileSelect, selectedPath }: FileBrowserP
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [treeData]);
 
-  const initializeTree = () => {
-    const initialTree: Record<string, TreeNode> = {};
-    FOLDER_STRUCTURE.forEach((folder) => {
-      initialTree[folder.id] = {
-        folder,
-        isOpen: false,
-        files: [],
-        loading: false,
-      };
-    });
-    setTreeData(initialTree);
+  const loadRootDirectories = async () => {
+    setSyncStatus('syncing');
+    try {
+      const contents = await getRepositoryContents('');
+      const rootDirs = contents
+        .filter(item => item.type === 'dir')
+        .map(dir => ({
+          name: dir.name,
+          path: dir.path,
+          type: 'dir' as const,
+          isOpen: false,
+          children: [] as TreeItem[],
+          loading: false,
+        }));
+      setTreeData(rootDirs);
+      setSyncStatus('synced');
+    } catch (error) {
+      console.error('Error loading root directories:', error);
+      setSyncStatus('error');
+    }
   };
 
   const refreshAllOpenFolders = useCallback(async () => {
-    const openFolders = Object.entries(treeData)
-      .filter(([, node]) => node.isOpen)
-      .map(([id]) => id);
+    const refreshItem = async (item: TreeItem): Promise<TreeItem> => {
+      if (!item.isOpen) return item;
+      
+      try {
+        const contents = await getRepositoryContents(item.path);
+        const updatedChildren = contents.map(child => {
+          const existingChild = item.children.find(c => c.path === child.path);
+          return {
+            name: child.name,
+            path: child.path,
+            type: child.type,
+            isOpen: existingChild?.isOpen || false,
+            children: existingChild?.children || [],
+            loading: false,
+          };
+        });
+        
+        return {
+          ...item,
+          children: await Promise.all(updatedChildren.map(refreshItem)),
+        };
+      } catch (error) {
+        console.error('Error refreshing folder:', error);
+        return item;
+      }
+    };
 
-    for (const folderId of openFolders) {
-      await refreshFolderSilent(folderId);
-    }
+    const updatedTree = await Promise.all(treeData.map(refreshItem));
+    setTreeData(updatedTree);
   }, [treeData]);
 
-  const refreshFolderSilent = async (folderId: string) => {
-    try {
-      const contents = await getRepositoryContents(folderId);
-      setTreeData((prev) => ({
-        ...prev,
-        [folderId]: {
-          ...prev[folderId],
-          files: contents,
-        },
-      }));
-    } catch (error) {
-      console.error('Error refreshing folder:', error);
-    }
-  };
-
-  const toggleFolder = async (folderId: string) => {
-    const node = treeData[folderId];
-    if (!node) return;
-
-    if (!node.isOpen && node.files.length === 0) {
-      setTreeData((prev) => ({
-        ...prev,
-        [folderId]: { ...prev[folderId], loading: true },
-      }));
-
-      const contents = await getRepositoryContents(folderId);
+  const toggleFolder = async (path: string) => {
+    const updateItem = async (item: TreeItem): Promise<TreeItem> => {
+      if (item.path === path) {
+        if (!item.isOpen && item.children.length === 0) {
+          // Load children
+          try {
+            const contents = await getRepositoryContents(path);
+            const children = contents.map(child => ({
+              name: child.name,
+              path: child.path,
+              type: child.type as 'file' | 'dir',
+              isOpen: false,
+              children: [] as TreeItem[],
+              loading: false,
+            }));
+            return { ...item, isOpen: true, children };
+          } catch (error) {
+            console.error('Error loading folder contents:', error);
+            return item;
+          }
+        } else {
+          // Just toggle
+          return { ...item, isOpen: !item.isOpen };
+        }
+      }
       
-      setTreeData((prev) => ({
-        ...prev,
-        [folderId]: {
-          ...prev[folderId],
-          isOpen: true,
-          files: contents,
-          loading: false,
-        },
-      }));
-    } else {
-      setTreeData((prev) => ({
-        ...prev,
-        [folderId]: { ...prev[folderId], isOpen: !prev[folderId].isOpen },
-      }));
-    }
+      if (item.children.length > 0) {
+        return {
+          ...item,
+          children: await Promise.all(item.children.map(updateItem)),
+        };
+      }
+      
+      return item;
+    };
+
+    const updatedTree = await Promise.all(treeData.map(updateItem));
+    setTreeData(updatedTree);
   };
 
-  const refreshFolder = async (folderId: string, e: React.MouseEvent) => {
+  const refreshFolder = async (path: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setSyncStatus('syncing');
     
-    setTreeData((prev) => ({
-      ...prev,
-      [folderId]: { ...prev[folderId], loading: true },
-    }));
+    const updateItem = async (item: TreeItem): Promise<TreeItem> => {
+      if (item.path === path) {
+        try {
+          const contents = await getRepositoryContents(path);
+          const children = contents.map(child => {
+            const existingChild = item.children.find(c => c.path === child.path);
+            return {
+              name: child.name,
+              path: child.path,
+              type: child.type as 'file' | 'dir',
+              isOpen: existingChild?.isOpen || false,
+              children: existingChild?.children || [],
+              loading: false,
+            };
+          });
+          return { ...item, children };
+        } catch (error) {
+          console.error('Error refreshing folder:', error);
+          return item;
+        }
+      }
+      
+      if (item.children.length > 0) {
+        return {
+          ...item,
+          children: await Promise.all(item.children.map(updateItem)),
+        };
+      }
+      
+      return item;
+    };
 
-    const contents = await getRepositoryContents(folderId);
-    
-    setTreeData((prev) => ({
-      ...prev,
-      [folderId]: {
-        ...prev[folderId],
-        files: contents,
-        loading: false,
-      },
-    }));
-    
+    const updatedTree = await Promise.all(treeData.map(updateItem));
+    setTreeData(updatedTree);
     setSyncStatus('synced');
   };
 
@@ -160,8 +206,8 @@ export default function FileBrowser({ onFileSelect, selectedPath }: FileBrowserP
     
     if (success) {
       setUploadStatus('success');
-      // Refresh the folder to show the new file
-      await refreshFolderSilent(selectedFolder);
+      // Refresh all folders to show the new file
+      await refreshAllOpenFolders();
       setTimeout(() => {
         setShowUploadModal(false);
         setUploadFileName('');
@@ -173,6 +219,73 @@ export default function FileBrowser({ onFileSelect, selectedPath }: FileBrowserP
     }
     
     setIsUploading(false);
+  };
+
+  const renderTreeItem = (item: TreeItem, depth: number = 0) => {
+    const paddingLeft = depth * 16 + 12;
+    
+    if (item.type === 'file') {
+      return (
+        <div
+          key={item.path}
+          onClick={() => onFileSelect({
+            name: item.name,
+            path: item.path,
+            type: item.type,
+            sha: '',
+          })}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${
+            selectedPath === item.path
+              ? 'bg-blue-100 text-blue-700'
+              : 'hover:bg-gray-100 text-gray-700'
+          }`}
+          style={{ paddingLeft: `${paddingLeft}px` }}
+        >
+          {getFileIcon(item.name)}
+          <span className="text-sm truncate">{item.name}</span>
+        </div>
+      );
+    }
+
+    return (
+      <div key={item.path}>
+        <div
+          onClick={() => toggleFolder(item.path)}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+          style={{ paddingLeft: `${paddingLeft}px` }}
+        >
+          <button className="p-1 hover:bg-gray-200 rounded">
+            {item.isOpen ? (
+              <ChevronDown className="w-4 h-4 text-gray-500" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-gray-500" />
+            )}
+          </button>
+          <Folder className="w-4 h-4 text-gray-400" />
+          <span className="flex-1 text-sm font-medium text-gray-700">
+            {item.name}
+          </span>
+          <button
+            onClick={(e) => refreshFolder(item.path, e)}
+            className="p-1 hover:bg-gray-200 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <RefreshCw className="w-3 h-3 text-gray-400" />
+          </button>
+        </div>
+
+        {item.isOpen && (
+          <div>
+            {item.children.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-gray-400 italic" style={{ paddingLeft: `${paddingLeft + 24}px` }}>
+                No files
+              </div>
+            ) : (
+              item.children.map(child => renderTreeItem(child, depth + 1))
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -217,19 +330,17 @@ export default function FileBrowser({ onFileSelect, selectedPath }: FileBrowserP
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Folder</label>
-                <select 
+                <label className="block text-sm font-medium text-gray-700 mb-1">Folder Path</label>
+                <input 
+                  type="text"
                   value={selectedFolder}
                   onChange={(e) => setSelectedFolder(e.target.value)}
+                  placeholder="e.g., 00_PROJECT_MANAGEMENT"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select a folder...</option>
-                  {FOLDER_STRUCTURE.map((folder) => (
-                    <option key={folder.id} value={folder.id}>
-                      {folder.icon} {folder.name}
-                    </option>
-                  ))}
-                </select>
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Enter the folder path (e.g., 00_PROJECT_MANAGEMENT or 00_PROJECT_MANAGEMENT/action_plans)
+                </p>
               </div>
               
               <div>
@@ -287,81 +398,13 @@ export default function FileBrowser({ onFileSelect, selectedPath }: FileBrowserP
       )}
 
       <div className="flex-1 overflow-y-auto p-2">
-        {FOLDER_STRUCTURE.map((folder) => {
-          const node = treeData[folder.id];
-          if (!node) return null;
-
-          return (
-            <div key={folder.id} className="mb-1">
-              <div
-                onClick={() => toggleFolder(folder.id)}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
-              >
-                <button className="p-1 hover:bg-gray-200 rounded">
-                  {node.isOpen ? (
-                    <ChevronDown className="w-4 h-4 text-gray-500" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-gray-500" />
-                  )}
-                </button>
-                <span className="text-lg">{folder.icon}</span>
-                <span className="flex-1 text-sm font-medium text-gray-700">
-                  {folder.name}
-                </span>
-                <button
-                  onClick={(e) => refreshFolder(folder.id, e)}
-                  className="p-1 hover:bg-gray-200 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <RefreshCw className="w-3 h-3 text-gray-400" />
-                </button>
-              </div>
-
-              {node.isOpen && (
-                <div className="ml-6 mt-1">
-                  {node.loading ? (
-                    <div className="flex items-center gap-2 px-3 py-2">
-                      <RefreshCw className="w-4 h-4 text-gray-400 animate-spin" />
-                      <span className="text-sm text-gray-500">Loading...</span>
-                    </div>
-                  ) : (
-                    <>
-                      {folder.subfolders.map((sub) => (
-                        <div
-                          key={sub.id}
-                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
-                        >
-                          <Folder className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm text-gray-600">{sub.name}</span>
-                        </div>
-                      ))}
-                      
-                      {node.files.map((file) => (
-                        <div
-                          key={file.path}
-                          onClick={() => onFileSelect(file)}
-                          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${
-                            selectedPath === file.path
-                              ? 'bg-blue-100 text-blue-700'
-                              : 'hover:bg-gray-100 text-gray-700'
-                          }`}
-                        >
-                          {getFileIcon(file.name)}
-                          <span className="text-sm truncate">{file.name}</span>
-                        </div>
-                      ))}
-                      
-                      {node.files.length === 0 && folder.subfolders.length === 0 && (
-                        <div className="px-3 py-2 text-sm text-gray-400 italic">
-                          No files yet
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {treeData.length === 0 ? (
+          <div className="flex items-center justify-center h-32">
+            <RefreshCw className="w-6 h-6 text-gray-400 animate-spin" />
+          </div>
+        ) : (
+          treeData.map(item => renderTreeItem(item))
+        )}
       </div>
     </div>
   );
