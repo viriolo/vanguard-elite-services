@@ -19,7 +19,9 @@ import {
   Columns,
   Zap,
   Flag,
-  Route
+  Route,
+  Menu,
+  X
 } from 'lucide-react';
 import { USERS } from '@/lib/config';
 import { FileNode, getFileContent } from '@/lib/github-client';
@@ -50,6 +52,7 @@ export default function Portal() {
   const [currentUser] = useState(USERS[0]);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dashboardData, setDashboardData] = useState<{
     tasks: Task[];
     isLoading: boolean;
@@ -454,7 +457,16 @@ export default function Portal() {
 
   return (
     <div className="h-screen flex bg-gray-50">
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+      {/* Mobile Menu Overlay */}
+      {mobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Sidebar - Hidden on mobile by default */}
+      <div className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 w-64 bg-white border-r border-gray-200 flex flex-col z-50 transition-transform duration-300`}>
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -527,8 +539,28 @@ export default function Portal() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
-        {renderContent()}
+      {/* Main Content */}
+      <div className="flex-1 overflow-hidden flex flex-col">
+        {/* Mobile Header */}
+        <div className="lg:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold">V</span>
+            </div>
+            <span className="font-bold text-gray-800">Vanguard Elite</span>
+          </div>
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-hidden">
+          {renderContent()}
+        </div>
       </div>
     </div>
   );
