@@ -10,7 +10,11 @@ import {
   User,
   Bell,
   LogOut,
-  ChevronDown
+  ChevronDown,
+  Calendar,
+  Wallet,
+  AlertTriangle,
+  Clock
 } from 'lucide-react';
 import { USERS } from '@/lib/config';
 import { FileNode } from '@/lib/github-client';
@@ -37,47 +41,93 @@ export default function Portal() {
   const renderContent = () => {
     switch (currentView) {
       case 'dashboard':
+        // Calculate days until SIA license (assuming 1 year from company formation)
+        const siaExpiryDate = new Date('2027-01-30');
+        const daysUntilSIA = Math.ceil((siaExpiryDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+        
+        // Budget tracking (from startup budget)
+        const totalBudget = 50000; // K50,000
+        const spentBudget = 12500; // K12,500 (example)
+        const remainingBudget = totalBudget - spentBudget;
+        const budgetPercent = (spentBudget / totalBudget) * 100;
+        
+        // Next 3 critical tasks
+        const upcomingTasks = [
+          { id: '2.1', name: 'Reserve company name at IPA', due: '3 days', phase: 'Phase 2' },
+          { id: '2.4', name: 'Apply for police clearance', due: '5 days', phase: 'Phase 2' },
+          { id: '2.7', name: 'Contact insurers for quotes', due: '7 days', phase: 'Phase 2' },
+        ];
+        
         return (
           <div className="p-8">
             <div className="mb-8">
-              <h1 className="text-3xl font-bold text-gray-800 mb-2">
+              <h1 className="text-3xl font-bold text-slate-800 mb-2">
                 Welcome back, {currentUser.name}
               </h1>
-              <p className="text-gray-600">Here&apos;s what&apos;s happening with your projects today.</p>
+              <p className="text-slate-600">Here&apos;s what&apos;s happening with your projects today.</p>
             </div>
 
+            {/* Critical Dashboard Widgets */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+              {/* License Renewal Widget */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-amber-100 rounded-lg">
+                    <Calendar className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <span className={`text-sm font-medium ${daysUntilSIA < 30 ? 'text-red-600' : 'text-amber-600'}`}>
+                    {daysUntilSIA < 30 ? 'Expiring soon' : 'Active'}
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-slate-800 mb-1">{daysUntilSIA}</div>
+                <div className="text-sm text-slate-500">Days until SIA license expires</div>
+                <div className="mt-3 text-xs text-slate-400">
+                  Expires: {siaExpiryDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </div>
+              </div>
+
+              {/* Budget Widget */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-emerald-100 rounded-lg">
+                    <Wallet className="w-6 h-6 text-emerald-600" />
+                  </div>
+                  <span className="text-sm text-emerald-600 font-medium">
+                    K{remainingBudget.toLocaleString()} left
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-slate-800 mb-1">K{spentBudget.toLocaleString()}</div>
+                <div className="text-sm text-slate-500">Spent of K{totalBudget.toLocaleString()} budget</div>
+                <div className="mt-3">
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div 
+                      className="bg-emerald-500 h-2 rounded-full transition-all" 
+                      style={{ width: `${budgetPercent}%` }}
+                    />
+                  </div>
+                  <div className="mt-1 text-xs text-slate-400">{budgetPercent.toFixed(1)}% used</div>
+                </div>
+              </div>
+
+              {/* Upcoming Tasks Widget */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <div className="flex items-center justify-between mb-4">
                   <div className="p-3 bg-blue-100 rounded-lg">
-                    <CheckSquare className="w-6 h-6 text-blue-600" />
+                    <Clock className="w-6 h-6 text-blue-600" />
                   </div>
-                  <span className="text-sm text-green-600 font-medium">+2 today</span>
+                  <span className="text-sm text-blue-600 font-medium">Next 3 tasks</span>
                 </div>
-                <div className="text-3xl font-bold text-gray-800 mb-1">12</div>
-                <div className="text-sm text-gray-500">Tasks completed</div>
-              </div>
-
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 bg-orange-100 rounded-lg">
-                    <FolderOpen className="w-6 h-6 text-orange-600" />
-                  </div>
-                  <span className="text-sm text-gray-500 font-medium">This week</span>
+                <div className="space-y-3">
+                  {upcomingTasks.map((task) => (
+                    <div key={task.id} className="flex items-start gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-700 truncate">{task.name}</p>
+                        <p className="text-xs text-slate-500">Due in {task.due}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="text-3xl font-bold text-gray-800 mb-1">8</div>
-                <div className="text-sm text-gray-500">Documents updated</div>
-              </div>
-
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 bg-red-100 rounded-lg">
-                    <Bell className="w-6 h-6 text-red-600" />
-                  </div>
-                  <span className="text-sm text-red-600 font-medium">Action needed</span>
-                </div>
-                <div className="text-3xl font-bold text-gray-800 mb-1">3</div>
-                <div className="text-sm text-gray-500">Blocked tasks</div>
               </div>
             </div>
 

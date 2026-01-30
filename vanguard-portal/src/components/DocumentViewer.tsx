@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { FileNode, getFileContent, getFileSha, getCommitHistory, updateFile } from '@/lib/github-client';
 import { USERS } from '@/lib/config';
+import MarkdownEditor from './MarkdownEditor';
 
 interface CommitInfo {
   sha: string;
@@ -134,21 +135,30 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
   };
 
   const insertText = (before: string, after: string = '') => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+    // Get current selection from window
+    const selection = window.getSelection();
+    const activeElement = document.activeElement;
     
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = content.substring(start, end);
-    const newText = content.substring(0, start) + before + selectedText + after + content.substring(end);
+    // Find the textarea within the MarkdownEditor
+    const textarea = document.querySelector('.markdown-editor-textarea') as HTMLTextAreaElement;
     
-    handleContentChange(newText);
-    
-    setTimeout(() => {
-      textarea.focus();
-      const newCursorPos = start + before.length + selectedText.length;
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-    }, 0);
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const selectedText = content.substring(start, end);
+      const newText = content.substring(0, start) + before + selectedText + after + content.substring(end);
+      
+      handleContentChange(newText);
+      
+      setTimeout(() => {
+        textarea.focus();
+        const newCursorPos = start + before.length + selectedText.length;
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
+      }, 0);
+    } else {
+      // Fallback: just append to end
+      handleContentChange(content + before + after);
+    }
   };
 
   const toolbarButtons = [
@@ -295,18 +305,11 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
       </div>
 
       {/* Editor */}
-      <div className="flex-1 relative">
-        <textarea
-          ref={textareaRef}
+      <div className="flex-1 relative bg-white">
+        <MarkdownEditor
           value={content}
-          onChange={(e) => handleContentChange(e.target.value)}
-          className="w-full h-full p-6 font-mono text-sm resize-none focus:outline-none bg-white leading-relaxed"
+          onChange={handleContentChange}
           placeholder="Start typing..."
-          spellCheck={false}
-          style={{ 
-            tabSize: 2,
-            lineHeight: '1.8',
-          }}
         />
       </div>
 
