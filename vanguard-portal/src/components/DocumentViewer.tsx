@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { 
@@ -14,7 +14,27 @@ import {
   Clock,
   ChevronRight,
   FileText,
-  GitCommit
+  GitCommit,
+  Eye,
+  Code,
+  Columns,
+  Type,
+  Bold,
+  Italic,
+  List,
+  ListOrdered,
+  Quote,
+  Link,
+  Image,
+  Heading1,
+  Heading2,
+  Heading3,
+  Table,
+  CheckSquare,
+  Maximize2,
+  Minimize2,
+  Undo2,
+  Redo2
 } from 'lucide-react';
 import { FileNode, getFileContent, getFileSha, getCommitHistory, updateFile } from '@/lib/github-client';
 import { USERS } from '@/lib/config';
@@ -33,16 +53,26 @@ interface DocumentViewerProps {
   onNavigate?: (path: string) => void;
 }
 
+type EditMode = 'edit' | 'preview' | 'split';
+
 export default function DocumentViewer({ file, currentUser, onNavigate }: DocumentViewerProps) {
   const [content, setContent] = useState('');
   const [originalContent, setOriginalContent] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  const [editMode, setEditMode] = useState<EditMode>('split');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [history, setHistory] = useState<CommitInfo[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [fileSha, setFileSha] = useState<string | null>(null);
+  const [lineCount, setLineCount] = useState(0);
+  const [charCount, setCharCount] = useState(0);
+  const [wordCount, setWordCount] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [undoStack, setUndoStack] = useState<string[]>([]);
+  const [redoStack, setRedoStack] = useState<string[]>([]);
 
   useEffect(() => {
     if (file) {
@@ -50,6 +80,12 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
+
+  useEffect(() => {
+    setLineCount(content.split('\n').length);
+    setCharCount(content.length);
+    setWordCount(content.split(/\s+/).filter(w => w.length > 0).length);
+  }, [content]);
 
   const loadFile = async () => {
     if (!file) return;
@@ -69,7 +105,67 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
     setHistory(commitHistory);
     setIsLoading(false);
     setIsEditing(false);
+    setUndoStack([]);
+    setRedoStack([]);
   };
+
+  const handleContentChange = (newContent: string) => {
+    setUndoStack(prev => [...prev, content]);
+    setRedoStack([]);
+    setContent(newContent);
+  };
+
+  const handleUndo = () => {
+    if (undoStack.length > 0) {
+      const previousContent = undoStack[undoStack.length - 1];
+      setRedoStack(prev => [...prev, content]);
+      setContent(previousContent);
+      setUndoStack(prev => prev.slice(0, -1));
+    }
+  };
+
+  const handleRedo = () => {
+    if (redoStack.length > 0) {
+      const nextContent = redoStack[redoStack.length - 1];
+      setUndoStack(prev => [...prev, content]);
+      setContent(nextContent);
+      setRedoStack(prev => prev.slice(0, -1));
+    }
+  };
+
+  const insertText = (before: string, after: string = '') => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = content.substring(start, end);
+    const newText = content.substring(0, start) + before + selectedText + after + content.substring(end);
+    
+    handleContentChange(newText);
+    
+    setTimeout(() => {
+      textarea.focus();
+      const newCursorPos = start + before.length + selectedText.length;
+      textarea.setSelectionRange(newCursorPos, newCursorPos);
+    }, 0);
+  };
+
+  const toolbarButtons = [
+    { icon: Bold, action: () => insertText('**', '**'), title: 'Bold' },
+    { icon: Italic, action: () => insertText('*', '*'), title: 'Italic' },
+    { icon: Heading1, action: () => insertText('# '), title: 'Heading 1' },
+    { icon: Heading2, action: () => insertText('## '), title: 'Heading 2' },
+    { icon: Heading3, action: () => insertText('### '), title: 'Heading 3' },
+    { icon: List, action: () => insertText('- '), title: 'Bullet List' },
+    { icon: ListOrdered, action: () => insertText('1. '), title: 'Numbered List' },
+    { icon: CheckSquare, action: () => insertText('- [ ] '), title: 'Task List' },
+    { icon: Quote, action: () => insertText('> '), title: 'Quote' },
+    { icon: Code, action: () => insertText('```\n', '\n```'), title: 'Code Block' },
+    { icon: Link, action: () => insertText('[', '](url)'), title: 'Link' },
+    { icon: Image, action: () => insertText('![alt](', ')'), title: 'Image' },
+    { icon: Table, action: () => insertText('| Header 1 | Header 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |'), title: 'Table' },
+  ];
 
   const handleSave = async () => {
     if (!file || !fileSha) return;
@@ -163,13 +259,93 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
 
   const breadcrumbs = getBreadcrumbs(file.path);
 
-  return (
+  const renderEditor = () => (
     <div className="h-full flex flex-col bg-white">
+      {/* Toolbar */}
+      <div className="flex items-center gap-1 px-4 py-2 border-b border-slate-200 bg-slate-50 overflow-x-auto">
+        <button
+          onClick={handleUndo}
+          disabled={undoStack.length === 0}
+          className="p-1.5 rounded hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          title="Undo"
+        >
+          <Undo2 className="w-4 h-4 text-slate-600" />
+        </button>
+        <button
+          onClick={handleRedo}
+          disabled={redoStack.length === 0}
+          className="p-1.5 rounded hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors mr-2"
+          title="Redo"
+        >
+          <Redo2 className="w-4 h-4 text-slate-600" />
+        </button>
+        
+        <div className="w-px h-5 bg-slate-300 mx-1" />
+        
+        {toolbarButtons.map((btn, idx) => (
+          <button
+            key={idx}
+            onClick={btn.action}
+            className="p-1.5 rounded hover:bg-slate-200 transition-colors"
+            title={btn.title}
+          >
+            <btn.icon className="w-4 h-4 text-slate-600" />
+          </button>
+        ))}
+      </div>
+
+      {/* Editor */}
+      <div className="flex-1 relative">
+        <textarea
+          ref={textareaRef}
+          value={content}
+          onChange={(e) => handleContentChange(e.target.value)}
+          className="w-full h-full p-6 font-mono text-sm resize-none focus:outline-none bg-white leading-relaxed"
+          placeholder="Start typing..."
+          spellCheck={false}
+          style={{ 
+            tabSize: 2,
+            lineHeight: '1.8',
+          }}
+        />
+      </div>
+
+      {/* Status Bar */}
+      <div className="px-4 py-2 border-t border-slate-200 bg-slate-50 text-xs text-slate-500 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <span>{lineCount} lines</span>
+          <span>{wordCount} words</span>
+          <span>{charCount} characters</span>
+        </div>
+        <div className="flex items-center gap-4">
+          {hasChanges && (
+            <span className="text-amber-600 font-medium">Unsaved changes</span>
+          )}
+          <span>Markdown</span>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPreview = () => (
+    <div className="h-full overflow-auto custom-scrollbar bg-white">
+      <div className="p-8 max-w-4xl mx-auto">
+        <div className="markdown-content">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {content || '*No content*'}
+          </ReactMarkdown>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className={`h-full flex flex-col bg-white ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
       {/* Breadcrumbs */}
       <div className="px-6 py-3 bg-slate-50 border-b border-slate-200">
         <nav className="flex items-center gap-2 text-sm">
           <span className="text-slate-500">Documents</span>
-          {breadcrumbs.map((crumb, index) => (
+          {breadcrumbs.map((crumb) => (
             <div key={crumb.path} className="flex items-center gap-2">
               <ChevronRight className="w-4 h-4 text-slate-400" />
               {crumb.isLast ? (
@@ -194,14 +370,48 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
             <FileText className="w-5 h-5 text-slate-400" />
             <h2 className="text-lg font-semibold text-slate-800">{file.name}</h2>
           </div>
-          {hasChanges && (
-            <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">
-              Unsaved changes
-            </span>
-          )}
         </div>
         
         <div className="flex items-center gap-2">
+          {/* View Mode Toggle */}
+          {isEditing && (
+            <div className="flex items-center bg-slate-100 rounded-lg p-1 mr-2">
+              <button
+                onClick={() => setEditMode('edit')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                  editMode === 'edit' 
+                    ? 'bg-white text-slate-800 shadow-sm' 
+                    : 'text-slate-600 hover:text-slate-800'
+                }`}
+              >
+                <Code className="w-4 h-4" />
+                Edit
+              </button>
+              <button
+                onClick={() => setEditMode('split')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                  editMode === 'split' 
+                    ? 'bg-white text-slate-800 shadow-sm' 
+                    : 'text-slate-600 hover:text-slate-800'
+                }`}
+              >
+                <Columns className="w-4 h-4" />
+                Split
+              </button>
+              <button
+                onClick={() => setEditMode('preview')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                  editMode === 'preview' 
+                    ? 'bg-white text-slate-800 shadow-sm' 
+                    : 'text-slate-600 hover:text-slate-800'
+                }`}
+              >
+                <Eye className="w-4 h-4" />
+                Preview
+              </button>
+            </div>
+          )}
+
           <button
             onClick={() => setShowHistory(!showHistory)}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
@@ -211,7 +421,15 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
             }`}
           >
             <GitCommit className="w-4 h-4" />
-            Version History
+            History
+          </button>
+
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
           
           {!isEditing ? (
@@ -256,7 +474,7 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
                 ) : (
                   <>
                     <Save className="w-4 h-4" />
-                    Save Changes
+                    Save
                   </>
                 )}
               </button>
@@ -265,27 +483,26 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
         </div>
       </div>
 
-      {/* Content */}
+      {/* Content Area */}
       <div className="flex-1 flex overflow-hidden">
-        <div className={`flex-1 overflow-auto custom-scrollbar ${showHistory ? 'w-2/3' : 'w-full'}`}>
-          {isEditing ? (
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="w-full h-full p-8 font-mono text-sm resize-none focus:outline-none bg-slate-50"
-              placeholder="Start typing..."
-              spellCheck={false}
-            />
-          ) : (
-            <div className="p-8 max-w-4xl mx-auto">
-              <div className="markdown-content">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {content || '*No content*'}
-                </ReactMarkdown>
+        {isEditing ? (
+          <>
+            {(editMode === 'edit' || editMode === 'split') && (
+              <div className={`${editMode === 'split' ? 'w-1/2 border-r border-slate-200' : 'flex-1'}`}>
+                {renderEditor()}
               </div>
-            </div>
-          )}
-        </div>
+            )}
+            {(editMode === 'preview' || editMode === 'split') && (
+              <div className={`${editMode === 'split' ? 'w-1/2' : 'flex-1'}`}>
+                {renderPreview()}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex-1">
+            {renderPreview()}
+          </div>
+        )}
 
         {/* History Sidebar */}
         {showHistory && (
@@ -306,6 +523,7 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
                         Current
                       </span>
                     )}
+                    
                     <div className="flex items-start gap-2 mb-2">
                       <div className="w-6 h-6 bg-slate-100 rounded-full flex items-center justify-center flex-shrink-0">
                         <User className="w-3 h-3 text-slate-500" />
