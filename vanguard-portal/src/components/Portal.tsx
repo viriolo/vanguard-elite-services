@@ -25,6 +25,7 @@ export default function Portal() {
   const [selectedFile, setSelectedFile] = useState<FileNode | null>(null);
   const [currentUser] = useState(USERS[0]);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   const navigation = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -138,15 +139,22 @@ export default function Portal() {
 
       case 'documents':
         return (
-          <div className="h-full flex">
-            <div className="w-80 flex-shrink-0">
-              <FileBrowser 
-                onFileSelect={setSelectedFile} 
-                selectedPath={selectedFile?.path}
+          <div className="h-full flex relative">
+            <FileBrowser 
+              onFileSelect={setSelectedFile} 
+              selectedPath={selectedFile?.path}
+              isSidebarOpen={isSidebarOpen}
+              onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+            />
+            <div className="flex-1 min-w-0">
+              <DocumentViewer 
+                file={selectedFile} 
+                currentUser={currentUser}
+                onNavigate={(path) => {
+                  // Handle breadcrumb navigation
+                  console.log('Navigate to:', path);
+                }}
               />
-            </div>
-            <div className="flex-1">
-              <DocumentViewer file={selectedFile} currentUser={currentUser} />
             </div>
           </div>
         );
