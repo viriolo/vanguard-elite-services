@@ -330,17 +330,109 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
     </div>
   );
 
-  const renderPreview = () => (
-    <div className="h-full overflow-auto custom-scrollbar bg-white">
-      <div className="p-8 max-w-4xl mx-auto">
-        <div className="markdown-content">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {content || '*No content*'}
-          </ReactMarkdown>
+  const renderPreview = () => {
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    
+    // PDF Viewer
+    if (fileExtension === 'pdf') {
+      return (
+        <div className="h-full bg-slate-100 flex flex-col items-center justify-center p-8">
+          <div className="bg-white rounded-xl shadow-lg p-8 max-w-2xl w-full text-center">
+            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FileText className="w-10 h-10 text-red-600" />
+            </div>
+            <h3 className="text-xl font-semibold text-slate-800 mb-2">PDF Document</h3>
+            <p className="text-slate-600 mb-6">{file.name}</p>
+            <div className="space-y-3">
+              <a 
+                href={`https://raw.githubusercontent.com/viriolo/vanguard-elite-services/master/${file.path}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                <Eye className="w-4 h-4" />
+                View PDF
+              </a>
+              <p className="text-sm text-slate-500">
+                Opens in new tab
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // DOCX Viewer
+    if (fileExtension === 'docx' || fileExtension === 'doc') {
+      return (
+        <div className="h-full bg-slate-100 flex flex-col items-center justify-center p-8">
+          <div className="bg-white rounded-xl shadow-lg p-8 max-w-2xl w-full text-center">
+            <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FileText className="w-10 h-10 text-blue-600" />
+            </div>
+            <h3 className="text-xl font-semibold text-slate-800 mb-2">Word Document</h3>
+            <p className="text-slate-600 mb-6">{file.name}</p>
+            <div className="space-y-3">
+              <a 
+                href={`https://raw.githubusercontent.com/viriolo/vanguard-elite-services/master/${file.path}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Eye className="w-4 h-4" />
+                Download Document
+              </a>
+              <p className="text-sm text-slate-500">
+                Download to view in Microsoft Word or Google Docs
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // Excel files
+    if (fileExtension === 'xlsx' || fileExtension === 'xls') {
+      return (
+        <div className="h-full bg-slate-100 flex flex-col items-center justify-center p-8">
+          <div className="bg-white rounded-xl shadow-lg p-8 max-w-2xl w-full text-center">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FileText className="w-10 h-10 text-green-600" />
+            </div>
+            <h3 className="text-xl font-semibold text-slate-800 mb-2">Excel Spreadsheet</h3>
+            <p className="text-slate-600 mb-6">{file.name}</p>
+            <div className="space-y-3">
+              <a 
+                href={`https://raw.githubusercontent.com/viriolo/vanguard-elite-services/master/${file.path}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                <Eye className="w-4 h-4" />
+                Download Spreadsheet
+              </a>
+              <p className="text-sm text-slate-500">
+                Download to view in Microsoft Excel or Google Sheets
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // Default Markdown viewer
+    return (
+      <div className="h-full overflow-auto custom-scrollbar bg-white">
+        <div className="p-8 max-w-4xl mx-auto">
+          <div className="markdown-content">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {content || '*No content*'}
+            </ReactMarkdown>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className={`h-full flex flex-col bg-white ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
@@ -376,8 +468,8 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
         </div>
         
         <div className="flex items-center gap-2">
-          {/* View Mode Toggle */}
-          {isEditing && (
+          {/* View Mode Toggle - Only for markdown files */}
+          {isEditing && file.name.endsWith('.md') && (
             <div className="flex items-center bg-slate-100 rounded-lg p-1 mr-2">
               <button
                 onClick={() => setEditMode('edit')}
@@ -435,7 +527,8 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
           
-          {!isEditing ? (
+          {/* Only show Edit button for markdown files */}
+          {!isEditing && file.name.endsWith('.md') ? (
             <button
               onClick={() => setIsEditing(true)}
               className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors text-sm font-medium"
@@ -443,7 +536,7 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
               <Edit3 className="w-4 h-4" />
               Edit
             </button>
-          ) : (
+          ) : isEditing ? (
             <>
               <button
                 onClick={() => {
@@ -482,7 +575,7 @@ export default function DocumentViewer({ file, currentUser, onNavigate }: Docume
                 )}
               </button>
             </>
-          )}
+          ) : null}
         </div>
       </div>
 
