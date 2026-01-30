@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   FolderOpen, 
@@ -14,15 +14,27 @@ import {
   Calendar,
   Wallet,
   AlertTriangle,
-  Clock
+  Clock,
+  Loader2
 } from 'lucide-react';
 import { USERS } from '@/lib/config';
-import { FileNode } from '@/lib/github-client';
+import { FileNode, getFileContent } from '@/lib/github-client';
 import FileBrowser from './FileBrowser';
 import DocumentViewer from './DocumentViewer';
 import TaskTracker from './TaskTracker';
 
 type View = 'dashboard' | 'documents' | 'tasks' | 'history';
+
+interface Task {
+  id: string;
+  task: string;
+  owner: string;
+  status: 'PENDING' | 'IN PROGRESS' | 'DONE' | 'BLOCKED';
+  blockedBy: string;
+  dateDone: string;
+  notes: string;
+  phase: string;
+}
 
 export default function Portal() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
@@ -30,6 +42,55 @@ export default function Portal() {
   const [currentUser] = useState(USERS[0]);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [dashboardData, setDashboardData] = useState<{
+    tasks: Task[];
+    isLoading: boolean;
+  }>({ tasks: [], isLoading: true });
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      const content = await getFileContent('00_PROJECT_MANAGEMENT/TASK_TRACKER.md');
+      const tasks = parseTaskTracker(content);
+      setDashboardData({ tasks, isLoading: false });
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+      setDashboardData({ tasks: [], isLoading: false });
+    }
+  };
+
+  const parseTaskTracker = (content: string): Task[] => {
+    const tasks: Task[] = [];
+    const lines = content.split('\n');
+    let currentPhase = '';
+
+    for (const line of lines) {
+      const phaseMatch = line.match(/## (PHASE \d+):/);
+      if (phaseMatch) {
+        currentPhase = phaseMatch[1];
+        continue;
+      }
+
+      const taskMatch = line.match(/\| (\d+\.\d+) \| (.+?) \| (.+?) \| (PENDING|IN PROGRESS|DONE|BLOCKED) \| (.+?) \| (.+?) \| (.+?) \|/);
+      if (taskMatch && currentPhase) {
+        tasks.push({
+          id: taskMatch[1],
+          task: taskMatch[2].trim(),
+          owner: taskMatch[3].trim(),
+          status: taskMatch[4] as Task['status'],
+          blockedBy: taskMatch[5].trim(),
+          dateDone: taskMatch[6].trim(),
+          notes: taskMatch[7].trim(),
+          phase: currentPhase,
+        });
+      }
+    }
+
+    return tasks;
+  };
 
   const navigation = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -41,22 +102,34 @@ export default function Portal() {
   const renderContent = () => {
     switch (currentView) {
       case 'dashboard':
+        if (dashboardData.isLoading) {
+          return (
+            <div className="h-full flex items-center justify-center">
+              <Loader2 className="w-8 h-8 animate-spin text-slate-600" />
+            </div>
+          );
+        }
+
+        const { tasks } = dashboardData;
+        
+        // Calculate real stats from tasks
+        const totalTasks = tasks.length;
+        const completedTasks = tasks.filter(t => t.status === 'DONE').length;
+        const inProgressTasks = tasks.filter(t => t.status === 'IN PROGRESS').length;
+        const blockedTasks = tasks.filter(t => t.status === 'BLOCKED').length;
+        const pendingTasks = tasks.filter(t => t.status === 'PENDING').length;
+        
+        // Calculate completion percentage
+        const completionPercent = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+        
+        // Get next 3 pending tasks that aren't blocked
+        const upcomingTasks = tasks
+          .filter(t => t.status === 'PENDING' && t.blockedBy === '--')
+          .slice(0, 3);
+        
         // Calculate days until SIA license (assuming 1 year from company formation)
         const siaExpiryDate = new Date('2027-01-30');
         const daysUntilSIA = Math.ceil((siaExpiryDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-        
-        // Budget tracking (from startup budget)
-        const totalBudget = 50000; // K50,000
-        const spentBudget = 12500; // K12,500 (example)
-        const remainingBudget = totalBudget - spentBudget;
-        const budgetPercent = (spentBudget / totalBudget) * 100;
-        
-        // Next 3 critical tasks
-        const upcomingTasks = [
-          { id: '2.1', name: 'Reserve company name at IPA', due: '3 days', phase: 'Phase 2' },
-          { id: '2.4', name: 'Apply for police clearance', due: '5 days', phase: 'Phase 2' },
-          { id: '2.7', name: 'Contact insurers for quotes', due: '7 days', phase: 'Phase 2' },
-        ];
         
         return (
           <div className="p-8">
@@ -86,26 +159,26 @@ export default function Portal() {
                 </div>
               </div>
 
-              {/* Budget Widget */}
+              {/* Progress Widget */}
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <div className="flex items-center justify-between mb-4">
                   <div className="p-3 bg-emerald-100 rounded-lg">
                     <Wallet className="w-6 h-6 text-emerald-600" />
                   </div>
                   <span className="text-sm text-emerald-600 font-medium">
-                    K{remainingBudget.toLocaleString()} left
+                    {completedTasks} of {totalTasks} done
                   </span>
                 </div>
-                <div className="text-3xl font-bold text-slate-800 mb-1">K{spentBudget.toLocaleString()}</div>
-                <div className="text-sm text-slate-500">Spent of K{totalBudget.toLocaleString()} budget</div>
+                <div className="text-3xl font-bold text-slate-800 mb-1">{completionPercent.toFixed(0)}%</div>
+                <div className="text-sm text-slate-500">Project completion</div>
                 <div className="mt-3">
                   <div className="w-full bg-slate-200 rounded-full h-2">
                     <div 
                       className="bg-emerald-500 h-2 rounded-full transition-all" 
-                      style={{ width: `${budgetPercent}%` }}
+                      style={{ width: `${completionPercent}%` }}
                     />
                   </div>
-                  <div className="mt-1 text-xs text-slate-400">{budgetPercent.toFixed(1)}% used</div>
+                  <div className="mt-1 text-xs text-slate-400">{inProgressTasks} in progress • {blockedTasks} blocked • {pendingTasks} pending</div>
                 </div>
               </div>
 
@@ -115,18 +188,24 @@ export default function Portal() {
                   <div className="p-3 bg-blue-100 rounded-lg">
                     <Clock className="w-6 h-6 text-blue-600" />
                   </div>
-                  <span className="text-sm text-blue-600 font-medium">Next 3 tasks</span>
+                  <span className="text-sm text-blue-600 font-medium">
+                    {upcomingTasks.length} ready to start
+                  </span>
                 </div>
                 <div className="space-y-3">
-                  {upcomingTasks.map((task) => (
-                    <div key={task.id} className="flex items-start gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-700 truncate">{task.name}</p>
-                        <p className="text-xs text-slate-500">Due in {task.due}</p>
+                  {upcomingTasks.length > 0 ? (
+                    upcomingTasks.map((task) => (
+                      <div key={task.id} className="flex items-start gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-700 truncate">{task.task}</p>
+                          <p className="text-xs text-slate-500">{task.phase} • {task.owner}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-500 italic">No pending tasks available</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -157,30 +236,37 @@ export default function Portal() {
                 </div>
               </div>
 
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Ready to Start</h3>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 className="text-lg font-semibold text-slate-800 mb-4">Task Status Overview</h3>
                 <div className="space-y-3">
-                  {[
-                    { id: '2.1', task: 'Reserve company name at IPA', priority: 'high' },
-                    { id: '2.4', task: 'Apply for police clearance', priority: 'high' },
-                    { id: '2.7', task: 'Contact insurers for quotes', priority: 'medium' },
-                  ].map((task) => (
-                    <div key={task.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-500">{task.id}</span>
-                          <span className="text-sm text-gray-800">{task.task}</span>
-                        </div>
-                      </div>
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        task.priority === 'high' 
-                          ? 'bg-red-100 text-red-700' 
-                          : 'bg-yellow-100 text-yellow-700'
-                      }`}>
-                        {task.priority}
-                      </span>
+                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full bg-emerald-500" />
+                      <span className="text-sm text-slate-700">Completed</span>
                     </div>
-                  ))}
+                    <span className="text-sm font-semibold text-slate-800">{completedTasks}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full bg-blue-500" />
+                      <span className="text-sm text-slate-700">In Progress</span>
+                    </div>
+                    <span className="text-sm font-semibold text-slate-800">{inProgressTasks}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full bg-amber-500" />
+                      <span className="text-sm text-slate-700">Pending</span>
+                    </div>
+                    <span className="text-sm font-semibold text-slate-800">{pendingTasks}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full bg-red-500" />
+                      <span className="text-sm text-slate-700">Blocked</span>
+                    </div>
+                    <span className="text-sm font-semibold text-slate-800">{blockedTasks}</span>
+                  </div>
                 </div>
               </div>
             </div>
